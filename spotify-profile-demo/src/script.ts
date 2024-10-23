@@ -12,7 +12,7 @@ if (!code) {
 
 
 export async function getAccessToken(clientId: string, code: string): Promise<string> {
-    const verifier = localStorage.getItem("verifier");
+    const verifier = sessionStorage.getItem("verifier");
 
     const params = new URLSearchParams();
     params.append("client_id", clientId);
@@ -59,7 +59,7 @@ export async function redirectToAuthCodeFlow(clientId: string) {
     const verifier = generateCodeVerifier(128);
     const challenge = await generateCodeChallenge(verifier);
 
-    localStorage.setItem("verifier", verifier);
+    sessionStorage.setItem("verifier", verifier);
 
     const params = new URLSearchParams();
     params.append("client_id", clientId);

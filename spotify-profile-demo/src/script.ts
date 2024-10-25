@@ -1,15 +1,19 @@
-const clientId = "cd2a95dd025e40d1a3b1464400c055f0"; // Replace with your client id
+const clientId = "cd2a95dd025e40d1a3b1464400c055f0"; // Reemplaza con tu client ID
 const params = new URLSearchParams(window.location.search);
 const code = params.get("code");
 
 if (!code) {
     redirectToAuthCodeFlow(clientId);
-} else {
+} else if (sessionStorage.getItem("token")) {
+    document.location =`http://localhost:5173/`;
+}
+else {
     const accessToken = await getAccessToken(clientId, code);
+    sessionStorage.setItem("toke", accessToken);
     const profile = await fetchProfile(accessToken);
     populateUI(profile);
+    await displayTopTracks(accessToken);
 }
-
 
 export async function getAccessToken(clientId: string, code: string): Promise<string> {
     const verifier = localStorage.getItem("verifier");
@@ -31,15 +35,27 @@ export async function getAccessToken(clientId: string, code: string): Promise<st
     return access_token;
 }
 
-async function fetchProfile(token: string): Promise<any> {
-    const result = await fetch("https://api.spotify.com/v1/me", {
-        method: "GET", headers: { Authorization: `Bearer ${token}` }
-    });
-
-    return await result.json();
+// Definición de la interfaz del perfil de usuario
+interface SpotifyProfile {
+    display_name: string;
+    id: string;
+    email: string;
+    images: { url: string }[];
+    uri: string;
+    external_urls: { spotify: string };
+    href: string;
 }
 
-function populateUI(profile: any) {
+async function fetchProfile(token: string): Promise<SpotifyProfile> {
+    const result = await fetch("https://api.spotify.com/v1/me", {
+        method: "GET",
+        headers: { Authorization: `Bearer ${token}` }
+    });
+
+    return await result.json() as SpotifyProfile;
+}
+
+function populateUI(profile: SpotifyProfile) {
     document.getElementById("displayName")!.innerText = profile.display_name;
     if (profile.images[0]) {
         const profileImage = new Image(200, 200);
@@ -58,14 +74,13 @@ function populateUI(profile: any) {
 export async function redirectToAuthCodeFlow(clientId: string) {
     const verifier = generateCodeVerifier(128);
     const challenge = await generateCodeChallenge(verifier);
-
     localStorage.setItem("verifier", verifier);
 
     const params = new URLSearchParams();
     params.append("client_id", clientId);
     params.append("response_type", "code");
     params.append("redirect_uri", "http://localhost:5173/callback");
-    params.append("scope", "user-read-private user-read-email");
+    params.append("scope", "user-read-private user-read-email user-top-read");
     params.append("code_challenge_method", "S256");
     params.append("code_challenge", challenge);
 
@@ -91,3 +106,50 @@ async function generateCodeChallenge(codeVerifier: string) {
         .replace(/=+$/, '');
 }
 
+// Función para hacer solicitudes a la API
+async function fetchWebApi(endpoint: string, method: string, token: string, body?: any) {
+    const res = await fetch(`https://api.spotify.com/${endpoint}`, {
+        headers: {
+            Authorization: `Bearer ${token}`,
+        },
+        method,
+        body: body ? JSON.stringify(body) : null
+    });
+
+    const responseData = await res.json();
+    
+    if (!res.ok) {
+        console.error('Error en la API de Spotify:', responseData);
+        throw new Error('Error en la solicitud a la API de Spotify');
+    }
+
+    return responseData;
+}
+
+// Obtener los top tracks
+async function getTopTracks(token: string) {
+    return (await fetchWebApi('v1/me/top/tracks?time_range=long_term&limit=5', 'GET', token)).items;
+}
+
+// Mostrar los top tracks en la UI
+async function displayTopTracks(accessToken: string) {
+    try {
+        const topTracks = await getTopTracks(accessToken);
+        const trackList = document.getElementById('top-tracks-list')!;
+        
+        topTracks.forEach(({ name, artists }: { name: string, artists: { name: string }[] }) => {
+            const trackItem = document.createElement('li');
+            trackItem.textContent = `${name} by ${artists.map(artist => artist.name).join(', ')}`;
+            trackList.appendChild(trackItem);
+        });
+    } catch (error) {
+        console.error('Error al obtener los top tracks:', error);
+        alert('Hubo un problema al obtener los top tracks.');
+    }
+}
+
+// Manejo de la funcionalidad de cierre de sesión
+document.getElementById('logout-button')?.addEventListener('click', () => {
+    localStorage.removeItem('verifier');
+    location.reload();
+});
